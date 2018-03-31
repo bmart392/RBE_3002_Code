@@ -1,0 +1,25 @@
+<launch>
+  <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+
+	<!-- TB3 Fake -->
+  <param name="tb3_model" value="$(arg model)"/>
+
+  <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
+    <arg name="model" value="$(arg model)" />
+  </include>
+
+  <node pkg="turtlebot3_fake" type="turtlebot3_fake_node" name="turtlebot3_fake_node" output="screen" />
+
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+    <param name="publish_frequency" type="double" value="50.0" />
+  </node>
+	
+	 <!-- Map server -->
+  <arg name="map_file" default="$(find group1_lab3)/stagemaps/simple_map.yaml"/>
+	<node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+	<node pkg="tf" type="static_transform_publisher" name="odom_to_map_pub" args="0 0 0 0 0 0 1 /odom map 100" />
+
+	<!-- RViz -->
+	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find group1_lab3)/rviz/config.rviz" />
+</launch>
