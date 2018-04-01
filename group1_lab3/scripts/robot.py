@@ -1,9 +1,13 @@
 import rospy, tf, copy, math
 
-from geometry_msgs.msg import Twist, Pose, PoseStamped
-from tf.transformations import euler_from_quaternion
+from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, PoseWithCovarianceStamped
+from nav_msgs.msg import OccupancyGrid, GridCells
+
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import numpy as np
 from std_msgs.msg import String
+
+from astar import AStar
 
 class Robot:
 
@@ -14,15 +18,51 @@ class Robot:
         """
 
         self._current = Pose()
-        self._odom_list = tf.TransformListener()
+        self._map = OccupancyGrid()
+        self._odom_list = tf.TransformListener
+        self.rate = rospy.Rate(10)
+
+        # Current pose timer
         rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
 
-        self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        # Subscribers
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.navToPose, queue_size=1) # handle nav goal
+        rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.updateInitialPose, queue_size=1)
+        rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1)
 
+        # Publishers
+        self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        self._grid_wall_pub = rospy.Publisher('/astar_grid_wall', GridCells, latch=True, queue_size=1)
+        self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=1)
+        self._grid_explored_pub = rospy.Publisher('/astar_grid_explored', GridCells, latch=True, queue_size=1)
+
+        # Robot Parameters
         self.wheel_diameter = 0.066 # meters
         self.wheel_track = 0.16 # meters
-        self.rate = rospy.Rate(10)
+
+    def updateInitialPose(self, pose):
+        print(pose.pose.position)
+
+    def updateMap(self, newMap):
+        self._map = newMap
+
+        cells = GridCells()
+        cells.header.frame_id = self._map.header.frame_id
+        cells.cell_width = self._map.info.resolution
+        cells.cell_height = self._map.info.resolution
+
+        # Generate walls
+        cellPoints = []
+        for x in range(0, self._map.info.width):
+            row = []
+            for y in range(0, self._map.info.height):
+                if (self._map.data[y * self._map.info.height + x] > 0):
+                    cellX = (x * self._map.info.resolution) + (self._map.info.resolution / 2);
+                    cellY = (y * self._map.info.resolution) + (self._map.info.resolution / 2);
+                    cellPoints.append(Point(cellX, cellY, 0))
+        cells.cells = cellPoints
+
+        self._grid_wall_pub.publish(cells)
 
     def updateCurrentPose(self,evprent):
         """
@@ -31,16 +71,16 @@ class Robot:
         """
 
 	    # wait for and get the transform between two frames
-        self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
-        (position, orientation) = self._odom_list.lookupTransform('odom', 'base_link', rospy.Time(0))
+        #self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
+        #(position, orientation) = self._odom_list.lookupTransform('odom', 'base_link', rospy.Time(0))
 
         # save the current position and orientation
-        self._current.position.x = position[0]
-        self._current.position.y = position[1]
-        self._current.orientation.x = orientation[0]
-        self._current.orientation.y = orientation[1]
-        self._current.orientation.z = orientation[2]
-        self._current.orientation.w = orientation[3]
+        #self._current.position.x = position[0]
+        #self._current.position.y = position[1]
+        #self._current.orientation.x = orientation[0]
+        #self._current.orientation.y = orientation[1]
+        #self._current.orientation.z = orientation[2]
+        #self._current.orientation.w = orientation[3]
 
     def navToPose(self, goal):
         self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
@@ -204,17 +244,8 @@ class Robot:
 
 if __name__ == '__main__':
 
-    rospy.init_node('drive_base')
+    rospy.init_node('group1_lab3_controller')
     turtle = Robot()
-
-    turtle.spinWheels(0.75, 0.25, 1)
-    rospy.sleep(0.5)
-    turtle.spinWheels(0.5, 0.5, 1)
-    rospy.sleep(0.5)
-    turtle.spinWheels(-0.75, 0.5, 1)
-
-    #test function calls here
-    #turtle.executeTrajectory()
 
     while not rospy.is_shutdown():
         pass
