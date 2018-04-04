@@ -1,7 +1,7 @@
 import rospy, tf, copy, math
 
-from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, PoseWithCovarianceStamped
-from nav_msgs.msg import OccupancyGrid, GridCells
+from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, PoseWithCovarianceStamped, Quaternion
+from nav_msgs.msg import OccupancyGrid, GridCells, Path
 
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import numpy as np
@@ -34,9 +34,10 @@ class Robot:
 
         # Publishers
         self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
-        self._grid_wall_pub = rospy.Publisher('/astar_grid_wall', GridCells, latch=True, queue_size=1)
-        self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=1)
-        self._grid_explored_pub = rospy.Publisher('/astar_grid_explored', GridCells, latch=True, queue_size=1)
+        self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
+        self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
+        self._grid_explored_pub = rospy.Publisher('/astar_grid_explored', GridCells, latch=True, queue_size=10)
+        self._path_pub = rospy.Publisher('/astar_path', Path, latch=True, queue_size=1)
 
         # Robot Parameters
         self.wheel_diameter = 0.066 # meters
@@ -47,7 +48,9 @@ class Robot:
 
     def getNeighbors(self, x, y):
         neighbors = []
-        for coord in [(x - 1, y), (x + 1, y), (x, y + 1), (x, y - 1)]:
+        #for coord in [(x, y - 1),  (x - 1, y), (x + 1, y), (x, y + 1)]:
+        for coord in [(x - 1, y - 1), (x, y - 1), (x + 1, y - 1), (x - 1, y),
+                      (x + 1, y), (x - 1, y + 1), (x, y + 1), (x + 1, y + 1)]:
             xc = coord[0]
             yc = coord[1]
 
@@ -61,22 +64,30 @@ class Robot:
     def updateMap(self, newMap):
         self._map = newMap
 
+    def drawNodes(self, nodes, topic):
+        publisher = None
+        if (topic == "frontier"):
+            publisher = self._grid_frontier_pub
+        elif (topic == "explored"):
+            publisher = self._grid_explored_pub
+        else:
+            return
+
         cells = GridCells()
         cells.header.frame_id = self._map.header.frame_id
         cells.cell_width = self._map.info.resolution
         cells.cell_height = self._map.info.resolution
 
-        # Generate walls
         cellPoints = []
-        for x in range(0, self._map.info.width):
-            for y in range(0, self._map.info.height):
-                if (self._map.data[y * self._map.info.height + x] > 0):
-                    cellX = (x * self._map.info.resolution) + (self._map.info.resolution / 2)
-                    cellY = (y * self._map.info.resolution) + (self._map.info.resolution / 2)
-                    cellPoints.append(Point(cellX, cellY, 0))
+        for node in nodes:
+            cellX = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
+            cellY = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+            cellPoints.append(Point(cellX, cellY, 0))
 
         cells.cells = cellPoints
-        self._grid_wall_pub.publish(cells)
+        publisher.publish(cells)
+
+        #rospy.sleep(0.01)
 
     def runAStar(self):
         if(self.goal_x == None): return
@@ -84,12 +95,15 @@ class Robot:
         start_x = int(self._current.position.x / self._map.info.resolution)
         start_y = int(self._current.position.y / self._map.info.resolution)
 
-        print start_x, start_y
-
         cells = GridCells()
         cells.header.frame_id = self._map.header.frame_id
         cells.cell_width = self._map.info.resolution
         cells.cell_height = self._map.info.resolution
+
+        # Clear current visualization
+        self._grid_path_pub.publish(cells)
+        self.drawNodes([], "frontier")
+        self.drawNodes([], "explored")
 
         # TODO add costs to graph
         nodes = []
@@ -110,7 +124,60 @@ class Robot:
                         goal = node
 
         astar = AStar(nodes, start, goal)
-        path = astar.compute()
+        astar.drawCallback = self.drawNodes
+        path = astar.compute(True)
+
+        waypoints = []
+        index = 0
+        current_dir = None
+        for node in path:
+            try:
+                next_node = path[index + 1]
+
+                # If we've changed directions, and add a waypoint if so
+                this_dir = math.atan2((next_node.y - node.y), (next_node.x - node.x))
+                if (current_dir == None or this_dir != current_dir):
+                    current_dir = this_dir
+
+                    # copied some stuff from
+                    # https://www.programcreek.com/python/example/70252/geometry_msgs.msg.PoseStamped
+                    pose = PoseStamped()
+                    pose.header.seq = len(waypoints)
+                    pose.header.frame_id = "map"
+                    pose.header.stamp = rospy.Time.now()
+
+                    pose.pose.position.x = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
+                    pose.pose.position.y = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+                    pose.pose.position.z = 0
+
+                    q = quaternion_from_euler(0.0, 0.0, current_dir)
+                    pose.pose.orientation = Quaternion(*q)
+
+                    waypoints.append(pose)
+
+                index += 1
+            except IndexError:
+                # We've reached the end of the loop, add last waypoint
+                pose = PoseStamped()
+                pose.header.seq = len(waypoints)
+                pose.header.frame_id = "map"
+                pose.header.stamp = rospy.Time.now()
+
+                pose.pose.position.x = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
+                pose.pose.position.y = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+                pose.pose.position.z = 0
+
+                q = quaternion_from_euler(0.0, 0.0, current_dir)
+                pose.pose.orientation = Quaternion(*q)
+
+                waypoints.append(pose)
+
+        path_msg = Path()
+        path_msg.header.frame_id = "map"
+        path_msg.header.stamp = rospy.Time.now()
+        path_msg.poses = waypoints
+
+        self._path_pub.publish(path_msg)
 
         cellPoints = []
         for node in path:
@@ -119,7 +186,7 @@ class Robot:
             cellPoints.append(Point(cellX, cellY, 0))
 
         cells.cells = cellPoints
-        self._grid_explored_pub.publish(cells)
+        self._grid_path_pub.publish(cells)
 
     def setEndNode(self,goal):
         self.goal_x = int(goal.pose.position.x / self._map.info.resolution)

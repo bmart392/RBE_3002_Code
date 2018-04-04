@@ -13,6 +13,8 @@ class AStar:
         self.start = start
         self.goal = goal
 
+        self.drawCallback = None
+
         self.graph = {}
         for node in graph:
             self.graph[(node.x, node.y)] = node
@@ -20,9 +22,11 @@ class AStar:
     def heuristic(self, node):
         return math.sqrt((self.goal.x - node.x)**2 + (self.goal.y - node.y)**2)
 
-    def compute(self):
+    def compute(self, draw):
         frontier = PriorityQueue()
-        frontier.put(self.start, 0)
+        frontier.put((0, self.start))
+
+        frontier_nodes = [self.start]
 
         came_from = {}
         came_from[self.start] = None
@@ -31,21 +35,36 @@ class AStar:
         cost_so_far[self.start] = 0
 
         while not frontier.empty():
-            current = frontier.get()
+            queue_entry = frontier.get()
+            current = queue_entry[1]
+            frontier_nodes.remove(current)
 
-            #if current == self.goal:
-            #    break
-
-            for next in current.neighbors:
+            for next_node in current.neighbors:
                  # Get the current node from the graph
-                next = self.graph[next]
+                next_node = self.graph[next_node]
                 new_cost = cost_so_far[current] + 1 # TODO add graph cost
 
-                if (next not in cost_so_far) or (new_cost < cost_so_far[next]):
-                    cost_so_far[next] = new_cost
-                    priority = new_cost + self.heuristic(next)
-                    frontier.put(next, priority)
-                    came_from[next] = current
+                if (next_node not in cost_so_far) or (new_cost < cost_so_far[next_node]):
+                    cost_so_far[next_node] = new_cost
+                    priority = new_cost + self.heuristic(next_node)
+                    frontier.put((priority, next_node))
+                    frontier_nodes.append(next_node)
+                    came_from[next_node] = current
+
+            if (draw):
+                # Update frontier visualization
+                self.drawCallback(frontier_nodes, "frontier")
+
+                # Update already explored visualization
+                already_explored = []
+                for node in cost_so_far:
+                    if (node not in frontier_nodes):
+                        already_explored.append(node)
+                self.drawCallback(already_explored, "explored")
+
+            if current == self.goal:
+                break
+
 
         # Work our way back through the came_from chain from the goal to the start
         path = [self.goal]

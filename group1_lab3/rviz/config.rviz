@@ -6,6 +6,8 @@ Panels:
       Expanded:
         - /GridCells1
         - /GridCells2
+        - /GridCells3
+        - /Path1
       Splitter Ratio: 0.5
     Tree Height: 565
   - Class: rviz/Selection
@@ -45,14 +47,44 @@ Visualization Manager:
       Color: 255; 0; 0
       Enabled: true
       Name: GridCells
-      Topic: /astar_grid_wall
+      Topic: /astar_grid_path
       Value: true
-    - Alpha: 0.5
+    - Alpha: 1
       Class: rviz/GridCells
-      Color: 85; 0; 255
+      Color: 0; 255; 0
       Enabled: true
       Name: GridCells
-      Topic: astar_grid_explored
+      Topic: astar_grid_frontier
+      Value: true
+    - Alpha: 0.25
+      Class: rviz/GridCells
+      Color: 0; 0; 255
+      Enabled: true
+      Name: GridCells
+      Topic: /astar_grid_explored
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 0; 255
+      Enabled: true
+      Head Diameter: 0.150000006
+      Head Length: 0.200000003
+      Length: 0.300000012
+      Line Style: Billboards
+      Line Width: 0.0299999993
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 255; 255
+      Pose Style: Arrows
+      Radius: 0.0500000007
+      Shaft Diameter: 0.100000001
+      Shaft Length: 0.100000001
+      Topic: /astar_path
+      Unreliable: false
       Value: true
     - Alpha: 0.5
       Cell Size: 0.300000012
@@ -159,25 +191,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 15.76546
+      Distance: 24.6112099
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 3.47096276
-        Y: 3.656986
-        Z: 0.00298139709
+        X: 5.33376455
+        Y: 4.49956989
+        Z: 0.00935316831
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.0500000007
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 1.56979632
+      Pitch: 1.56479633
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.70857573
+      Yaw: 4.71857452
     Saved: ~
 Window Geometry:
   Displays:
@@ -196,4 +228,4 @@ Window Geometry:
     collapsed: false
   Width: 1200
   X: 65
-  Y: 60
+  Y: 63
