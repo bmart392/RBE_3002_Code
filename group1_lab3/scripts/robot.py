@@ -7,7 +7,7 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import numpy as np
 from std_msgs.msg import String
 
-from astar import AStar
+from astar import AStar, Node
 
 class Robot:
 
@@ -19,15 +19,17 @@ class Robot:
 
         self._current = Pose()
         self._map = OccupancyGrid()
-        self._odom_list = tf.TransformListener
+        self._odom_list = tf.TransformListener()
         self.rate = rospy.Rate(10)
+        self.goal_x = None
+        self.goal_y = None
 
         # Current pose timer
         rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
 
         # Subscribers
-        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.navToPose, queue_size=1) # handle nav goal
-        rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.updateInitialPose, queue_size=1)
+        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.setEndNode, queue_size=1) # handle nav goal
+        #rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1)
         rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1)
 
         # Publishers
@@ -43,6 +45,19 @@ class Robot:
     def updateInitialPose(self, pose):
         print(pose.pose.position)
 
+    def getNeighbors(self, x, y):
+        neighbors = []
+        for coord in [(x - 1, y), (x + 1, y), (x, y + 1), (x, y - 1)]:
+            xc = coord[0]
+            yc = coord[1]
+
+            if (xc < 0 or yc < 0 or xc >= self._map.info.width or yc >= self._map.info.height): continue
+
+            if (self._map.data[yc * self._map.info.height + xc] == 0):
+                neighbors.append(coord)
+
+        return neighbors
+
     def updateMap(self, newMap):
         self._map = newMap
 
@@ -54,15 +69,69 @@ class Robot:
         # Generate walls
         cellPoints = []
         for x in range(0, self._map.info.width):
-            row = []
             for y in range(0, self._map.info.height):
                 if (self._map.data[y * self._map.info.height + x] > 0):
-                    cellX = (x * self._map.info.resolution) + (self._map.info.resolution / 2);
-                    cellY = (y * self._map.info.resolution) + (self._map.info.resolution / 2);
+                    cellX = (x * self._map.info.resolution) + (self._map.info.resolution / 2)
+                    cellY = (y * self._map.info.resolution) + (self._map.info.resolution / 2)
                     cellPoints.append(Point(cellX, cellY, 0))
-        cells.cells = cellPoints
 
+        cells.cells = cellPoints
         self._grid_wall_pub.publish(cells)
+
+    def runAStar(self):
+        if(self.goal_x == None): return
+
+        start_x = int(self._current.position.x / self._map.info.resolution)
+        start_y = int(self._current.position.y / self._map.info.resolution)
+
+        print start_x, start_y
+
+        cells = GridCells()
+        cells.header.frame_id = self._map.header.frame_id
+        cells.cell_width = self._map.info.resolution
+        cells.cell_height = self._map.info.resolution
+
+        # TODO add costs to graph
+        nodes = []
+        start = None
+        goal = None
+        for x in range(0, self._map.info.width):
+            for y in range(0, self._map.info.height):
+                if (self._map.data[y * self._map.info.height + x] == 0):
+                    neighbors = self.getNeighbors(x, y)
+                    node = Node(x, y, neighbors)
+                    nodes.append(node)
+
+                    # Hard choosing the start, end
+                    if (x == start_x and y == start_y):
+                        start = node
+
+                    if (x == self.goal_x and y == self.goal_y):
+                        goal = node
+
+        astar = AStar(nodes, start, goal)
+        path = astar.compute()
+
+        cellPoints = []
+        for node in path:
+            cellX = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
+            cellY = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+            cellPoints.append(Point(cellX, cellY, 0))
+
+        cells.cells = cellPoints
+        self._grid_explored_pub.publish(cells)
+
+    def setEndNode(self,goal):
+        self.goal_x = int(goal.pose.position.x / self._map.info.resolution)
+        self.goal_y = int(goal.pose.position.y / self._map.info.resolution)
+        print self.goal_x, self.goal_y
+        self.runAStar()
+
+    #def setStartNode(self,goal):
+    #    self.start_x = int(goal.pose.pose.position.x  / self._map.info.resolution)
+    #    self.start_y = int(goal.pose.pose.position.y  / self._map.info.resolution)
+    #    print self.start_x, self.start_y
+    #    self.runAStar()
 
     def updateCurrentPose(self,evprent):
         """
@@ -71,16 +140,16 @@ class Robot:
         """
 
 	    # wait for and get the transform between two frames
-        #self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
-        #(position, orientation) = self._odom_list.lookupTransform('odom', 'base_link', rospy.Time(0))
+        self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
+        (position, orientation) = self._odom_list.lookupTransform('odom', 'base_link', rospy.Time(0))
 
         # save the current position and orientation
-        #self._current.position.x = position[0]
-        #self._current.position.y = position[1]
-        #self._current.orientation.x = orientation[0]
-        #self._current.orientation.y = orientation[1]
-        #self._current.orientation.z = orientation[2]
-        #self._current.orientation.w = orientation[3]
+        self._current.position.x = position[0]
+        self._current.position.y = position[1]
+        self._current.orientation.x = orientation[0]
+        self._current.orientation.y = orientation[1]
+        self._current.orientation.z = orientation[2]
+        self._current.orientation.w = orientation[3]
 
     def navToPose(self, goal):
         self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))

@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /GridCells1
+        - /GridCells2
       Splitter Ratio: 0.5
     Tree Height: 565
   - Class: rviz/Selection
@@ -41,10 +42,17 @@ Visualization Manager:
       Value: true
     - Alpha: 0.5
       Class: rviz/GridCells
-      Color: 0; 0; 0
+      Color: 255; 0; 0
       Enabled: true
       Name: GridCells
       Topic: /astar_grid_wall
+      Value: true
+    - Alpha: 0.5
+      Class: rviz/GridCells
+      Color: 85; 0; 255
+      Enabled: true
+      Name: GridCells
+      Topic: astar_grid_explored
       Value: true
     - Alpha: 0.5
       Cell Size: 0.300000012
@@ -158,9 +166,9 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 4.58108091
-        Y: 5.07319212
-        Z: 0.00440181093
+        X: 3.47096276
+        Y: 3.656986
+        Z: 0.00298139709
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.0500000007
       Invert Z Axis: false
