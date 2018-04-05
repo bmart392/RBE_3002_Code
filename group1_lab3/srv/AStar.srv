@@ -1,0 +1,6 @@
+int64 start_x
+int64 start_y
+int64 goal_x
+int64 goal_y
+---
+nav_msgs/Path path
