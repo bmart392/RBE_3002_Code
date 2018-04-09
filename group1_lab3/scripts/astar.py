@@ -29,21 +29,44 @@ class AStar:
         self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
         self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
         self._grid_explored_pub = rospy.Publisher('/astar_grid_explored', GridCells, latch=True, queue_size=10)
+        self._grid_wall_pub = rospy.Publisher('/astar_grid_walls', GridCells, latch=True, queue_size=10)
 
         rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1)
 
     def updateMap(self, new_map):
         self._map = new_map
 
+        # Expand map
+        data = list(new_map.data)
+        for x in range(0, self._map.info.width):
+            for y in range(0, self._map.info.height):
+                if self._map.data[y * self._map.info.height + x] == 100:
+                    for coord in [(x - 1, y - 1), (x, y - 1), (x + 1, y - 1), (x - 1, y),
+                                  (x + 1, y), (x - 1, y + 1), (x, y + 1), (x + 1, y + 1)]:
+                        xc = coord[0]
+                        yc = coord[1]
+
+                        if xc < 0 or yc < 0 or xc >= self._map.info.width or yc >= self._map.info.height:
+                            continue
+
+                        data[yc * self._map.info.height + xc] = 100
+
+        self._map.data = tuple(data)
+
         # Parse map and create graph
         self._graph = {}
 
+        wall_nodes = []
         for x in range(0, self._map.info.width):
             for y in range(0, self._map.info.height):
                 if self._map.data[y * self._map.info.height + x] == 0:
                     neighbors = self.getNeighbors(x, y)
                     node = Node(x, y, neighbors)
                     self._graph[(x, y)] = node
+                else:
+                    wall_nodes.append(Node(x, y, []))
+
+        self.drawNodes(wall_nodes, "wall")
 
     def getNeighbors(self, x, y):
         neighbors = []
@@ -97,7 +120,7 @@ class AStar:
             for next_node in current.neighbors:
                 # Get the current node from the graph
                 next_node = self._graph[next_node]
-                new_cost = cost_so_far[current] + 1  # TODO add graph cost
+                new_cost = cost_so_far[current] + 10  # TODO add graph cost
 
                 if (next_node not in cost_so_far) or (new_cost < cost_so_far[next_node]):
                     cost_so_far[next_node] = new_cost
@@ -189,6 +212,8 @@ class AStar:
             publisher = self._grid_explored_pub
         elif topic == "path":
             publisher = self._grid_path_pub
+        elif topic == "wall":
+            publisher = self._grid_wall_pub
         else:
             return
 

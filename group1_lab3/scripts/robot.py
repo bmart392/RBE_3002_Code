@@ -56,11 +56,10 @@ class Robot:
 
         self._path_pub.publish(resp.path)
 
-    #def setStartNode(self,goal):
-    #    self.start_x = int(goal.pose.pose.position.x  / self._map.info.resolution)
-    #    self.start_y = int(goal.pose.pose.position.y  / self._map.info.resolution)
-    #    print self.start_x, self.start_y
-    #    self.runAStar()
+        waypoints = resp.path.poses[1:]
+        for waypoint in waypoints:
+            waypoint.header.stamp = rospy.Time.now()
+            self.navToPose(waypoint)
 
     def updateCurrentPose(self,evprent):
         """
@@ -103,7 +102,7 @@ class Robot:
         rospy.sleep(1)
         self.driveStraight(1, dist)
         rospy.sleep(1)
-        self.rotate_absolute(goal_r)
+        self.rotate_relative(-turn_r + goal_r)
 
     def getCurrentRotation(self):
         angle = self.getRotation(self._current)
@@ -125,6 +124,9 @@ class Robot:
             This method should populate a ??? message type and publish it to ??? in order to move the robot
         """
 
+        self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
+        rospy.sleep(1)
+
         origin = copy.deepcopy(self._current)
         target_r = self.getCurrentRotation()
         target_x = origin.position.x + (distance * math.cos(target_r))
@@ -134,7 +136,7 @@ class Robot:
 
         vel_msg = Twist()
 
-        kP = 1
+        kP = 2
         kP_r = 1
 
         error_x = 999
@@ -142,8 +144,8 @@ class Robot:
         tolerance = 0.05
         while (abs(error_x) > tolerance) or (abs(error_y) > tolerance):
             error_x = (target_x - self._current.position.x);
-            error_y =  (target_y - self._current.position.y);
-            calcSpeed = 1
+            error_y = (target_y - self._current.position.y);
+            calcSpeed = math.sqrt(error_x**2 + error_y**2) * kP
 
             vel_msg.linear.x = speed if (calcSpeed > speed) else calcSpeed
 
@@ -181,7 +183,7 @@ class Robot:
         print("rotate")
 
         error = 999
-        tolerance = 0.005
+        tolerance = 0.01
         while (abs(error) > tolerance):
             current_r = self.getCurrentRotation()
             error = target - current_r
