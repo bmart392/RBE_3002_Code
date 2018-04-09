@@ -34,6 +34,7 @@ class Robot:
         self._path_pub = rospy.Publisher('/astar_path', Path, latch=True, queue_size=1)
 
         # Services
+        rospy.wait_for_service('astar')
         self.astar_service = rospy.ServiceProxy('astar', AStar)
 
         # Robot Parameters
@@ -51,9 +52,9 @@ class Robot:
         goal_y = goal.pose.position.y
 
         # call astar service
-        path = self.astar_service(robot_x, robot_y, goal_x, goal_y)
+        resp = self.astar_service(robot_x, robot_y, goal_x, goal_y)
 
-        self._path_pub.publish(path)
+        self._path_pub.publish(resp.path)
 
     #def setStartNode(self,goal):
     #    self.start_x = int(goal.pose.pose.position.x  / self._map.info.resolution)
