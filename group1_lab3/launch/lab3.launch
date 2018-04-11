@@ -18,7 +18,7 @@
     </node>
 	
 	 <!-- Map server -->
-    <arg name="map_file" default="$(find group1_lab3)/stagemaps/simple_map.yaml"/>
+    <arg name="map_file" default="$(find group1_lab3)/stagemaps/turtlebot3_world.yaml"/>
     <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
 
 	<node pkg="tf" type="static_transform_publisher" name="odom_to_map_pub" args="0 0 0 0 0 0 1 /odom map 100" />

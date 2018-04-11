@@ -36,22 +36,24 @@ class AStar:
     def updateMap(self, new_map):
         self._map = new_map
 
-        # Expand map
-        data = list(new_map.data)
-        for x in range(0, self._map.info.width):
-            for y in range(0, self._map.info.height):
-                if self._map.data[y * self._map.info.height + x] == 100:
-                    for coord in [(x - 1, y - 1), (x, y - 1), (x + 1, y - 1), (x - 1, y),
-                                  (x + 1, y), (x - 1, y + 1), (x, y + 1), (x + 1, y + 1)]:
-                        xc = coord[0]
-                        yc = coord[1]
+        # Expand map expand_iterations times
+        expand_iterations = 3
+        for i in range(expand_iterations):
+            data = list(new_map.data)
+            for x in range(0, self._map.info.width):
+                for y in range(0, self._map.info.height):
+                    if self._map.data[y * self._map.info.height + x] == 100:
+                        for coord in [(x - 1, y - 1), (x, y - 1), (x + 1, y - 1), (x - 1, y),
+                                      (x + 1, y), (x - 1, y + 1), (x, y + 1), (x + 1, y + 1)]:
+                            xc = coord[0]
+                            yc = coord[1]
 
-                        if xc < 0 or yc < 0 or xc >= self._map.info.width or yc >= self._map.info.height:
-                            continue
+                            if xc < 0 or yc < 0 or xc >= self._map.info.width or yc >= self._map.info.height:
+                                continue
 
-                        data[yc * self._map.info.height + xc] = 100
+                            data[yc * self._map.info.height + xc] = 100
 
-        self._map.data = tuple(data)
+            self._map.data = tuple(data)
 
         # Parse map and create graph
         self._graph = {}
@@ -67,6 +69,18 @@ class AStar:
                     wall_nodes.append(Node(x, y, []))
 
         self.drawNodes(wall_nodes, "wall")
+
+    def mapCoordsToWorld(self, x, y):
+        xc = (x * self._map.info.resolution) + (self._map.info.resolution / 2) + (self._map.info.origin.position.x)
+        yc = (y * self._map.info.resolution) + (self._map.info.resolution / 2) + (self._map.info.origin.position.y)
+
+        return xc, yc
+
+    def worldCoordToMap(self, x, y):
+        xc = int((x - self._map.info.origin.position.x) / self._map.info.resolution)
+        yc = int((y - self._map.info.origin.position.y) / self._map.info.resolution)
+
+        return xc, yc
 
     def getNeighbors(self, x, y):
         neighbors = []
@@ -85,14 +99,13 @@ class AStar:
         return neighbors
 
     def heuristic(self, node, goal):
-        return math.sqrt((goal.x - node.x) ** 2 + (goal.y - node.y) ** 2)
+        dx = abs(node.x - goal.x)
+        dy = abs(node.y - goal.y)
+        return math.sqrt(dx**2 + dy**2)
 
     def handle_request(self, req):
-        start_x = int(req.start_x / self._map.info.resolution)
-        start_y = int(req.start_y / self._map.info.resolution)
-
-        goal_x = int(req.goal_x / self._map.info.resolution)
-        goal_y = int(req.goal_y / self._map.info.resolution)
+        (start_x, start_y) = self.worldCoordToMap(req.start_x, req.start_y)
+        (goal_x, goal_y) = self.worldCoordToMap(req.goal_x, req.goal_y)
 
         start = self._graph[(start_x, start_y)]
         goal = self._graph[(goal_x, goal_y)]
@@ -120,7 +133,7 @@ class AStar:
             for next_node in current.neighbors:
                 # Get the current node from the graph
                 next_node = self._graph[next_node]
-                new_cost = cost_so_far[current] + 10  # TODO add graph cost
+                new_cost = cost_so_far[current] + 1  # TODO add graph cost
 
                 if (next_node not in cost_so_far) or (new_cost < cost_so_far[next_node]):
                     cost_so_far[next_node] = new_cost
@@ -171,8 +184,10 @@ class AStar:
                     pose.header.frame_id = "map"
                     pose.header.stamp = rospy.Time.now()
 
-                    pose.pose.position.x = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
-                    pose.pose.position.y = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+                    (xc, yc) = self.mapCoordsToWorld(node.x, node.y)
+
+                    pose.pose.position.x = xc
+                    pose.pose.position.y = yc
                     pose.pose.position.z = 0
 
                     q = quaternion_from_euler(0.0, 0.0, current_dir)
@@ -188,8 +203,10 @@ class AStar:
                 pose.header.frame_id = "map"
                 pose.header.stamp = rospy.Time.now()
 
-                pose.pose.position.x = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
-                pose.pose.position.y = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+                (xc, yc) = self.mapCoordsToWorld(node.x, node.y)
+
+                pose.pose.position.x = xc
+                pose.pose.position.y = yc
                 pose.pose.position.z = 0
 
                 q = quaternion_from_euler(0.0, 0.0, current_dir)
@@ -224,8 +241,10 @@ class AStar:
 
         cell_points = []
         for node in nodes:
-            cell_x = (node.x * self._map.info.resolution) + (self._map.info.resolution / 2)
-            cell_y = (node.y * self._map.info.resolution) + (self._map.info.resolution / 2)
+            (xc, yc) = self.mapCoordsToWorld(node.x, node.y)
+
+            cell_x = xc
+            cell_y = yc
             cell_points.append(Point(cell_x, cell_y, 0))
 
         cells.cells = cell_points

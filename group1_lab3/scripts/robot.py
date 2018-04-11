@@ -94,9 +94,9 @@ class Robot:
 
         turn_r = math.atan2(goal_y, goal_x)
 
-        print(goal_x, goal_y, goal_r * 180/math.pi)
-        print(turn_r * 180/math.pi , dist)
-        print("")
+        # print(goal_x, goal_y, goal_r * 180/math.pi)
+        # print(turn_r * 180/math.pi , dist)
+        # print("")
 
         self.rotate_relative(turn_r)
         rospy.sleep(1)
@@ -180,8 +180,6 @@ class Robot:
 
         kP = 2
 
-        print("rotate")
-
         error = 999
         tolerance = 0.01
         while (abs(error) > tolerance):
@@ -189,7 +187,7 @@ class Robot:
             error = target - current_r
             vel_msg.angular.z = error * kP
 
-            print(target, current_r, error)
+            # print(target, current_r, error)
 
             self._vel_pub.publish(vel_msg)
             self.rate.sleep()
@@ -209,8 +207,6 @@ class Robot:
         vel_msg = Twist()
 
         omega = (v_right - v_left) / self.wheel_track
-
-        print(omega)
 
         if (v_left == v_right):
             vel_msg.linear.x = v_left
