@@ -1,13 +1,15 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>group1_lab3</name>
-  <version>0.3.0</version>
-  <description>The group1_lab3 package</description>
+  <name>group1</name>
+  <version>0.4.0</version>
+  <description>Package for RBE3002 Group 1 at WPI D18</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
   <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="jbbrown@wpi.edu">jbbrown</maintainer>
+  <maintainer email="jbbrown@wpi.edu">Jerry Brown</maintainer>
+  <maintainer email="zrboyer@wpi.edu">Zach Boyer</maintainer>
+  <maintainer email="bgmart@wpi.edu">Ben Mart</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->
