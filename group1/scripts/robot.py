@@ -26,7 +26,7 @@ class Robot:
         rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
 
         # Subscribers
-        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.setEndNode, queue_size=1) # handle nav goal
+        rospy.Subscriber('/astar_goal', PoseStamped, self.setEndNode, queue_size=1) # handle nav goal
         #rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1
 
         # Publishers
@@ -154,7 +154,7 @@ class Robot:
             #print(" ")
 
             error_r = target_r - self.getCurrentRotation()
-            vel_msg.angular.z = error_r * kP_r
+            #vel_msg.angular.z = error_r * kP_r
 
             self._vel_pub.publish(vel_msg)
             self.rate.sleep()

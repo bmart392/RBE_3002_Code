@@ -7,7 +7,7 @@
     <!-- TB3 Fake -->
     <param name="tb3_model" value="$(arg model)"/>
 
-        <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
+    <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
         <arg name="model" value="$(arg model)" />
     </include>
 
@@ -18,11 +18,13 @@
     </node>
 	
 	 <!-- Map server -->
-    <arg name="map_file" default="$(find group1_lab3)/stagemaps/turtlebot3_world.yaml"/>
+    <arg name="map_file" default="$(find group1)/stagemaps/turtlebot3_world.yaml"/>
     <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
 
 	<node pkg="tf" type="static_transform_publisher" name="odom_to_map_pub" args="0 0 0 0 0 0 1 /odom map 100" />
 
 	<!-- RViz -->
-	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find group1_lab3)/rviz/config.rviz" />
+	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find group1)/rviz/config.rviz">
+        <remap from="/move_base_simple/goal" to="/astar_goal"/>
+    </node>
 </launch>

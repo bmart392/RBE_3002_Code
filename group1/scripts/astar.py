@@ -25,6 +25,7 @@ class AStar:
 
         self._map = OccupancyGrid()
         self._graph = {}
+        self._costmap = OccupancyGrid()
 
         self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
         self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
@@ -32,12 +33,14 @@ class AStar:
         self._grid_wall_pub = rospy.Publisher('/astar_grid_walls', GridCells, latch=True, queue_size=10)
 
         rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1)
+        rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.updateCostMap, queue_size=1)
 
     def updateMap(self, new_map):
+        start_time = rospy.Time.now()
         self._map = new_map
 
         # Expand map expand_iterations times
-        expand_iterations = 3
+        expand_iterations = 2
         for i in range(expand_iterations):
             data = list(new_map.data)
             for x in range(0, self._map.info.width):
@@ -55,6 +58,38 @@ class AStar:
 
             self._map.data = tuple(data)
 
+        # Create optimized map
+        opt_map = OccupancyGrid()
+        opt_map.header.seq = 0
+        opt_map.header.stamp = rospy.Time.now()
+        opt_map.header.frame_id = "map" # TODO correct frame id?
+
+        # Calculate new map grid size
+        robot_size = 0.178 * 2
+        new_map_size = self._map.info.resolution
+        while (new_map_size < self._map.info.resolution / robot_size):
+            new_map_size += self._map.info.resolution
+
+        new_width = int(self._map.info.width * (self._map.info.resolution / new_map_size))
+        new_height = int(self._map.info.height * (self._map.info.resolution / new_map_size))
+
+        opt_map.info.resolution = new_map_size
+        opt_map.info.width = new_width
+        opt_map.info.height = new_height
+        opt_map.info.origin = self._map.info.origin
+
+        # Fill in new map
+        opt_map.data = [0] * (new_width * new_height)
+        for x in range(0, self._map.info.width):
+            for y in range(0, self._map.info.height):
+                if self._map.data[y * self._map.info.height + x] == 100:
+                    nx = int((float(x) / self._map.info.width) * new_width)
+                    ny = int((float(y) / self._map.info.height) * new_height)
+                    index = ny * new_height + nx
+                    opt_map.data[index] = 100
+
+        self._map = opt_map
+
         # Parse map and create graph
         self._graph = {}
 
@@ -68,7 +103,12 @@ class AStar:
                 else:
                     wall_nodes.append(Node(x, y, []))
 
+        end_time = rospy.Time.now()
+        print end_time - start_time
         self.drawNodes(wall_nodes, "wall")
+
+    def updateCostMap(self, costmap):
+        self._costmap = costmap
 
     def mapCoordsToWorld(self, x, y):
         xc = (x * self._map.info.resolution) + (self._map.info.resolution / 2) + (self._map.info.origin.position.x)
@@ -101,7 +141,7 @@ class AStar:
     def heuristic(self, node, goal):
         dx = abs(node.x - goal.x)
         dy = abs(node.y - goal.y)
-        return math.sqrt(dx**2 + dy**2)
+        return dx + dy # math.sqrt(dx**2 + dy**2)
 
     def handle_request(self, req):
         (start_x, start_y) = self.worldCoordToMap(req.start_x, req.start_y)
@@ -127,13 +167,13 @@ class AStar:
             queue_entry = frontier.get()
             current = queue_entry[1]
 
-            if current in frontier_nodes:
+            if self.draw and (current in frontier_nodes):
                 frontier_nodes.remove(current)
 
             for next_node in current.neighbors:
                 # Get the current node from the graph
                 next_node = self._graph[next_node]
-                new_cost = cost_so_far[current] + 1  # TODO add graph cost
+                new_cost = cost_so_far[current] + 1 #self._costmap.data[current.y * self._costmap.info.height + current.x]
 
                 if (next_node not in cost_so_far) or (new_cost < cost_so_far[next_node]):
                     cost_so_far[next_node] = new_cost
@@ -141,7 +181,7 @@ class AStar:
                     frontier.put((priority, next_node))
                     came_from[next_node] = current
 
-                    if next_node not in frontier_nodes:
+                    if self.draw and (next_node not in frontier_nodes):
                         frontier_nodes.append(next_node)
 
                 if current not in already_explored:
@@ -252,11 +292,10 @@ class AStar:
 
         rospy.sleep(0.01)
 
-
 if __name__ == "__main__":
-    astar = AStar()
-
     rospy.init_node('astar_server')
+
+    astar = AStar()
     s = rospy.Service('astar', group1_lab3.srv.AStar, astar.handle_request)
 
     rospy.spin()
