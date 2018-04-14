@@ -21,7 +21,6 @@ class DriveCommand:
 
     def setup(self):
         self.robot.waitForTransform('odom', 'base_link')
-        rospy.sleep(1)
 
         origin = self.robot.getCurrentPosition()
         self.target_r = self.robot.getCurrentRotation()

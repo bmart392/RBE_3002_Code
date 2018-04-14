@@ -26,6 +26,7 @@ class RotateCommand:
 
     def end(self):
         self.robot.stop()
+        rospy.sleep(1)
 
     def is_finished(self):
         return abs(self.error) < self.tolerance

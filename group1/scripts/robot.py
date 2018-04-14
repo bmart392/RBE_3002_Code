@@ -13,6 +13,7 @@ from Queue import Queue
 
 from RotateCommand import RotateCommand
 from DriveCommand import DriveCommand
+from NavToPoseCommand import NavToPoseCommand
 
 
 class Robot:
@@ -118,13 +119,17 @@ class Robot:
 
         waypoints = resp.path.poses[1:]
         for waypoint in waypoints:
-            waypoint.header.stamp = rospy.Time.now()
-            self.navToPose(waypoint)
+            self.command_queue.put(NavToPoseCommand(self, waypoint))
 
     ## OTHER FUNCTIONS
 
     def waitForTransform(self, from_frame, to_frame):
         self._odom_list.waitForTransform(from_frame, to_frame, rospy.Time(0), rospy.Duration(1.0))
+        rospy.sleep(1)
+
+    def transformPose(self, pose):
+        self.waitForTransform('odom', 'base_link')
+        return self._odom_list.transformPose('base_link', pose)
 
     def drive(self, twist):
         self._vel_pub.publish(twist)
@@ -134,34 +139,6 @@ class Robot:
         twist.linear.x = 0
         twist.angular.z = 0
         self._vel_pub.publish(twist)
-
-    def navToPose(self, goal):
-        self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
-        rospy.sleep(1)
-        transGoal = self._odom_list.transformPose('base_link',
-                                                  goal)  # transform the nav goal from the global coordinate system to the robot's coordinate system
-
-        origin_r = self.getCurrentRotation()
-
-        goal_x = transGoal.pose.position.x
-        goal_y = transGoal.pose.position.y
-        goal_r = self.getRotation(transGoal.pose)
-
-        dist = math.sqrt(goal_x ** 2 + goal_y ** 2)
-
-        turn_r = math.atan2(goal_y, goal_x)
-
-        # print(goal_x, goal_y, goal_r * 180/math.pi)
-        # print(turn_r * 180/math.pi , dist)
-        # print("")
-
-        rotate1 = RotateCommand(self, turn_r);
-        rotate2 = RotateCommand(self, -turn_r + goal_r)
-        drive1 = DriveCommand(self, dist)
-
-        self.command_queue.put(rotate1)
-        self.command_queue.put(drive1)
-        self.command_queue.put(rotate2)
 
     ## MOVE TO CMDS
 
