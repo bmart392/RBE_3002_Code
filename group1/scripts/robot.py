@@ -65,7 +65,7 @@ class Robot:
 
         if self.current_command is not None:
             self.current_command.update()
-            if self.current_command.is_finished():
+            if self.current_command is not None and self.current_command.is_finished():
                 self.current_command.end()
                 self.current_command = None
 

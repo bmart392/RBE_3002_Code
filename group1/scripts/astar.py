@@ -26,7 +26,8 @@ class AStar:
 
         self._map = OccupancyGrid()
         self._graph = {}
-        self._costmap = OccupancyGrid()
+        self._local_costmap_offset = (0, 0)
+        self._costmap = None
 
         self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
         self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
@@ -36,8 +37,9 @@ class AStar:
         self._opt_map_pub = rospy.Publisher('/astar_opt_map', OccupancyGrid, latch=True, queue_size=10)
         self._our_costmap = rospy.Publisher('/my_costmap', OccupancyGrid, latch=True, queue_size=10)
 
-        rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.initCostMap, queue_size=1)
-        rospy.Subscriber('/move_base/global_costmap/costmap_updates', OccupancyGridUpdate, self.updateCostMap, queue_size=1)
+        rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.initGlobalCostmap, queue_size=1)
+        rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.localCostmapMoved, queue_size=1)
+        rospy.Subscriber('/move_base/local_costmap/costmap_updates', OccupancyGridUpdate, self.localCostmapUpdate, queue_size=1)
 
     def updateMap(self, new_map):
         start_time = rospy.Time.now()
@@ -112,26 +114,42 @@ class AStar:
         self.drawNodes(wall_nodes, "wall")
         self._opt_map_pub.publish(self._map)
 
-    def initCostMap(self, costmap):
-        print "New Costmap"
+    def initGlobalCostmap(self, costmap):
+        print "New global costmap"
         self._costmap = costmap
         self._our_costmap.publish(self._costmap)
         self.updateMap(self._costmap)
 
-    def updateCostMap(self, costmap):
-        print "Update Costmap"
-        print (costmap.x, costmap.y, costmap.width, costmap.height)
+    def localCostmapMoved(self, costmap):
+        # Wait for us to get a global costmap
+        while (self._costmap is None):
+            pass
+
+        print "Local costmap moved"
+        offset = costmap.info.origin.position
+
+        xc = int((offset.x - self._costmap.info.origin.position.x) / self._costmap.info.resolution)
+        yc = int((offset.y - self._costmap.info.origin.position.y) / self._costmap.info.resolution)
+
+        self._local_costmap_offset = (xc, yc)
+
+    def localCostmapUpdate(self, costmap):
+        offset = self._local_costmap_offset
+
+        print "Update local costmap"
+        print offset
 
         new_data = list(self._costmap.data)
-        for x in range(costmap.x, costmap.width):
-            for y in range(costmap.y, costmap.height):
-                (xc, yc) = (x - costmap.x, y - costmap.y)
+        start_x = costmap.x + offset[0]
+        start_y = costmap.y + offset[1]
+        for x in range(start_x, start_x + costmap.width):
+            for y in range(start_y, start_y + costmap.height):
+                (xc, yc) = (x - start_x, y - start_y)
                 this_data = costmap.data[yc * costmap.height + xc]
                 new_data[y * self._costmap.info.height + x] = this_data
 
         # Create map update
         self._costmap.header.stamp = rospy.Time.now()
-        self._costmap.header.seq += 1
         self._costmap.data = tuple(new_data)
 
         self._our_costmap.publish(self._costmap)
