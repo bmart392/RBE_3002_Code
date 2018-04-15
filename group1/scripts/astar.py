@@ -4,6 +4,7 @@ from Queue import PriorityQueue
 
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from nav_msgs.msg import OccupancyGrid, GridCells, Path
+from map_msgs.msg import OccupancyGridUpdate
 
 from tf.transformations import quaternion_from_euler
 import numpy as np
@@ -32,20 +33,23 @@ class AStar:
         self._grid_explored_pub = rospy.Publisher('/astar_grid_explored', GridCells, latch=True, queue_size=10)
         self._grid_wall_pub = rospy.Publisher('/astar_grid_walls', GridCells, latch=True, queue_size=10)
 
-        rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1)
-        rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.updateCostMap, queue_size=1)
+        self._opt_map_pub = rospy.Publisher('/astar_opt_map', OccupancyGrid, latch=True, queue_size=10)
+        self._our_costmap = rospy.Publisher('/my_costmap', OccupancyGrid, latch=True, queue_size=10)
+
+        rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.initCostMap, queue_size=1)
+        rospy.Subscriber('/move_base/global_costmap/costmap_updates', OccupancyGridUpdate, self.updateCostMap, queue_size=1)
 
     def updateMap(self, new_map):
         start_time = rospy.Time.now()
-        self._map = new_map
+        self._map = copy.deepcopy(new_map)
 
         # Expand map expand_iterations times
-        expand_iterations = 2
+        expand_iterations = 1
         for i in range(expand_iterations):
             data = list(new_map.data)
             for x in range(0, self._map.info.width):
                 for y in range(0, self._map.info.height):
-                    if self._map.data[y * self._map.info.height + x] == 100:
+                    if self._map.data[y * self._map.info.height + x] > 0:
                         for coord in [(x - 1, y - 1), (x, y - 1), (x + 1, y - 1), (x - 1, y),
                                       (x + 1, y), (x - 1, y + 1), (x, y + 1), (x + 1, y + 1)]:
                             xc = coord[0]
@@ -62,7 +66,7 @@ class AStar:
         opt_map = OccupancyGrid()
         opt_map.header.seq = 0
         opt_map.header.stamp = rospy.Time.now()
-        opt_map.header.frame_id = "map" # TODO correct frame id?
+        opt_map.header.frame_id = "map"  # TODO correct frame id?
 
         # Calculate new map grid size
         robot_size = 0.178 * 2
@@ -82,7 +86,7 @@ class AStar:
         opt_map.data = [0] * (new_width * new_height)
         for x in range(0, self._map.info.width):
             for y in range(0, self._map.info.height):
-                if self._map.data[y * self._map.info.height + x] == 100:
+                if self._map.data[y * self._map.info.height + x] > 0:
                     nx = int((float(x) / self._map.info.width) * new_width)
                     ny = int((float(y) / self._map.info.height) * new_height)
                     index = ny * new_height + nx
@@ -104,11 +108,35 @@ class AStar:
                     wall_nodes.append(Node(x, y, []))
 
         end_time = rospy.Time.now()
-        print end_time - start_time
+        print ("Update Map Time", end_time - start_time)
         self.drawNodes(wall_nodes, "wall")
+        self._opt_map_pub.publish(self._map)
+
+    def initCostMap(self, costmap):
+        print "New Costmap"
+        self._costmap = costmap
+        self._our_costmap.publish(self._costmap)
+        self.updateMap(self._costmap)
 
     def updateCostMap(self, costmap):
-        self._costmap = costmap
+        print "Update Costmap"
+        print (costmap.x, costmap.y, costmap.width, costmap.height)
+
+        new_data = list(self._costmap.data)
+        for x in range(costmap.x, costmap.width):
+            for y in range(costmap.y, costmap.height):
+                (xc, yc) = (x - costmap.x, y - costmap.y)
+                this_data = costmap.data[yc * costmap.height + xc]
+                new_data[y * self._costmap.info.height + x] = this_data
+
+        # Create map update
+        self._costmap.header.stamp = rospy.Time.now()
+        self._costmap.header.seq += 1
+        self._costmap.data = tuple(new_data)
+
+        self._our_costmap.publish(self._costmap)
+
+        self.updateMap(self._costmap)
 
     def mapCoordsToWorld(self, x, y):
         xc = (x * self._map.info.resolution) + (self._map.info.resolution / 2) + (self._map.info.origin.position.x)

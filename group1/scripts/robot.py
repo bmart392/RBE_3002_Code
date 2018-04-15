@@ -33,6 +33,8 @@ class Robot:
 
         # Subscribers
         rospy.Subscriber('/astar_goal', PoseStamped, self.setEndNode, queue_size=1)  # handle nav goal
+        rospy.Subscriber('/astar_grid_walls', GridCells, self.map_changed, queue_size=1)
+        rospy.Subscriber('/astar_grid_path', GridCells, self.path_changed, queue_size=1)
         # rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1
 
         # Publishers
@@ -46,6 +48,9 @@ class Robot:
         # Robot Parameters
         self.wheel_diameter = 0.066  # meters
         self.wheel_track = 0.16  # meters
+
+        self.current_path = None
+        self.current_goal = None
 
         # Commnand stuff
         self.command_queue = Queue()
@@ -105,7 +110,36 @@ class Robot:
         self._current.orientation.z = orientation[2]
         self._current.orientation.w = orientation[3]
 
+    def path_changed(self, path):
+        self.current_path = path
+
+    def map_changed(self, cells):
+        if self.current_path is None:
+            return
+
+        graph = {}
+
+        for cell in cells.cells:
+            graph[(cell.x, cell.y)] = 1
+
+        obstacle_detected = False
+        for waypoint in self.current_path.cells:
+            if (waypoint.x, waypoint.y) in graph:
+                obstacle_detected = True
+                break
+
+        if not obstacle_detected:
+            return
+
+        self.stop()
+        self.command_queue = Queue()
+        self.current_command = None
+
+        self.setEndNode(self.current_goal)
+
     def setEndNode(self, goal):
+        self.current_goal = goal
+
         robot_x = self._current.position.x
         robot_y = self._current.position.y
 
