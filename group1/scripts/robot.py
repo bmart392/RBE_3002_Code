@@ -8,7 +8,7 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import numpy as np
 from std_msgs.msg import String
 
-from group1_lab3.srv import AStar
+from group1.srv import AStar
 from Queue import Queue
 
 from RotateCommand import RotateCommand

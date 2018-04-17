@@ -10,7 +10,7 @@ from tf.transformations import quaternion_from_euler
 import numpy as np
 from std_msgs.msg import String
 
-import group1_lab3.srv
+import group1.srv
 
 
 class Node:
@@ -342,6 +342,6 @@ if __name__ == "__main__":
     rospy.init_node('astar_server')
 
     astar = AStar()
-    s = rospy.Service('astar', group1_lab3.srv.AStar, astar.handle_request)
+    s = rospy.Service('astar', group1.srv.AStar, astar.handle_request)
 
     rospy.spin()
