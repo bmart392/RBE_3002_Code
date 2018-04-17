@@ -37,9 +37,10 @@ class AStar:
         self._opt_map_pub = rospy.Publisher('/astar_opt_map', OccupancyGrid, latch=True, queue_size=10)
         self._our_costmap = rospy.Publisher('/my_costmap', OccupancyGrid, latch=True, queue_size=10)
 
-        rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.initGlobalCostmap, queue_size=1)
-        rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.localCostmapMoved, queue_size=1)
-        rospy.Subscriber('/move_base/local_costmap/costmap_updates', OccupancyGridUpdate, self.localCostmapUpdate, queue_size=1)
+        #rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, self.initGlobalCostmap, queue_size=1)
+        rospy.Subscriber('/map', OccupancyGrid, self.initGlobalCostmap, queue_size=1)
+        #rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.localCostmapMoved, queue_size=1)
+        #rospy.Subscriber('/move_base/local_costmap/costmap_updates', OccupancyGridUpdate, self.localCostmapUpdate, queue_size=1)
 
     def updateMap(self, new_map):
         start_time = rospy.Time.now()
@@ -102,7 +103,7 @@ class AStar:
         wall_nodes = []
         for x in range(0, self._map.info.width):
             for y in range(0, self._map.info.height):
-                if self._map.data[y * self._map.info.height + x] == 0:
+                if self._map.data[y * self._map.info.height + x] == 0:  # IS THIS A WALL? NO? Go on
                     neighbors = self.getNeighbors(x, y)
                     node = Node(x, y, neighbors)
                     self._graph[(x, y)] = node
@@ -119,42 +120,66 @@ class AStar:
         self._costmap = costmap
         self._our_costmap.publish(self._costmap)
         self.updateMap(self._costmap)
+        self.explore()
 
-    def localCostmapMoved(self, costmap):
-        # Wait for us to get a global costmap
-        while (self._costmap is None):
-            pass
 
-        print "Local costmap moved"
-        offset = costmap.info.origin.position
+    def explore(self):
+        frontier_nodes = []
+        for x in range(0, self._map.info.width):
+            for y in range(0, self._map.info.height):
+                if self._map.data[y * self._map.info.height + x] > 0:  # IS THIS A WALL? NO? Go on
+                    neighbors = self.getNeighbors(x, y)
+                    node = Node(x, y, neighbors)
+                    for node in neighbors:
+                        if self._map.data[node.y * self._map.info.height + node.x] < 0:
+                            frontier_nodes.append(Node(x,y,[]))
+        if not frontier_nodes:
+            return
 
-        xc = int((offset.x - self._costmap.info.origin.position.x) / self._costmap.info.resolution)
-        yc = int((offset.y - self._costmap.info.origin.position.y) / self._costmap.info.resolution)
+        distance = 100
+        for node in frontier_nodes:
+            if math.sqrt((x**2 - node.x**2) + (y**2 - node.y**2)) < distance:
+                distance = math.sqrt((x ** 2 - node.x ** 2) + (y ** 2 - node.y ** 2))
+                node_to_go = node
 
-        self._local_costmap_offset = (xc, yc)
 
-    def localCostmapUpdate(self, costmap):
-        offset = self._local_costmap_offset
 
-        print "Update local costmap"
-        print offset
 
-        new_data = list(self._costmap.data)
-        start_x = costmap.x + offset[0]
-        start_y = costmap.y + offset[1]
-        for x in range(start_x, start_x + costmap.width):
-            for y in range(start_y, start_y + costmap.height):
-                (xc, yc) = (x - start_x, y - start_y)
-                this_data = costmap.data[yc * costmap.height + xc]
-                new_data[y * self._costmap.info.height + x] = this_data
-
-        # Create map update
-        self._costmap.header.stamp = rospy.Time.now()
-        self._costmap.data = tuple(new_data)
-
-        self._our_costmap.publish(self._costmap)
-
-        self.updateMap(self._costmap)
+    # def localCostmapMoved(self, costmap):
+    #     # Wait for us to get a global costmap
+    #     while (self._costmap is None):
+    #         pass
+    #
+    #     print "Local costmap moved"
+    #     offset = costmap.info.origin.position
+    #
+    #     xc = int((offset.x - self._costmap.info.origin.position.x) / self._costmap.info.resolution)
+    #     yc = int((offset.y - self._costmap.info.origin.position.y) / self._costmap.info.resolution)
+    #
+    #     self._local_costmap_offset = (xc, yc)
+    #
+    # def localCostmapUpdate(self, costmap):
+    #     offset = self._local_costmap_offset
+    #
+    #     print "Update local costmap"
+    #     print offset
+    #
+    #     new_data = list(self._costmap.data)
+    #     start_x = costmap.x + offset[0]
+    #     start_y = costmap.y + offset[1]
+    #     for x in range(start_x, start_x + costmap.width):
+    #         for y in range(start_y, start_y + costmap.height):
+    #             (xc, yc) = (x - start_x, y - start_y)
+    #             this_data = costmap.data[yc * costmap.height + xc]
+    #             new_data[y * self._costmap.info.height + x] = this_data
+    #
+    #     # Create map update
+    #     self._costmap.header.stamp = rospy.Time.now()
+    #     self._costmap.data = tuple(new_data)
+    #
+    #     self._our_costmap.publish(self._costmap)
+    #
+    #     self.updateMap(self._costmap)
 
     def mapCoordsToWorld(self, x, y):
         xc = (x * self._map.info.resolution) + (self._map.info.resolution / 2) + (self._map.info.origin.position.x)
@@ -219,7 +244,7 @@ class AStar:
             for next_node in current.neighbors:
                 # Get the current node from the graph
                 next_node = self._graph[next_node]
-                new_cost = cost_so_far[current] + 1 #self._costmap.data[current.y * self._costmap.info.height + current.x]
+                new_cost = cost_so_far[current] + self._costmap.data[current.y * self._costmap.info.height + current.x]
 
                 if (next_node not in cost_so_far) or (new_cost < cost_so_far[next_node]):
                     cost_so_far[next_node] = new_cost
