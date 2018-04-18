@@ -41,3 +41,8 @@ class Explore:
             frontier_goal = tuple(node_to_go.x, node_to_go.y)
 
             self.setEndNode(frontier_goal) # Should in theory astar to the frontier and drive there? Maybe?
+
+
+if _name_ == '_main_':
+    rospy.init_node('explore_node')
+    turtle = Explore()
