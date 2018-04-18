@@ -122,29 +122,6 @@ class AStar:
         self.updateMap(self._costmap)
         self.explore()
 
-
-    def explore(self):
-        frontier_nodes = []
-        for x in range(0, self._map.info.width):
-            for y in range(0, self._map.info.height):
-                if self._map.data[y * self._map.info.height + x] > 0:  # IS THIS A WALL? NO? Go on
-                    neighbors = self.getNeighbors(x, y)
-                    node = Node(x, y, neighbors)
-                    for node in neighbors:
-                        if self._map.data[node.y * self._map.info.height + node.x] < 0:
-                            frontier_nodes.append(Node(x,y,[]))
-        if not frontier_nodes:
-            return
-
-        distance = 100
-        for node in frontier_nodes:
-            if math.sqrt((x**2 - node.x**2) + (y**2 - node.y**2)) < distance:
-                distance = math.sqrt((x ** 2 - node.x ** 2) + (y ** 2 - node.y ** 2))
-                node_to_go = node
-
-
-
-
     # def localCostmapMoved(self, costmap):
     #     # Wait for us to get a global costmap
     #     while (self._costmap is None):
