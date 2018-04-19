@@ -35,6 +35,7 @@ class Robot:
         rospy.Subscriber('/astar_goal', PoseStamped, self.setEndNode, queue_size=1)  # handle nav goal
         rospy.Subscriber('/astar_grid_walls', GridCells, self.map_changed, queue_size=1)
         rospy.Subscriber('/astar_grid_path', GridCells, self.path_changed, queue_size=1)
+        rospy.Subscriber('/explore_frontier', Pose, self.setEndNode, queue_size=1)
         # rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1
 
         # Publishers
