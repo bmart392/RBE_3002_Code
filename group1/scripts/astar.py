@@ -120,7 +120,7 @@ class AStar:
         self._costmap = costmap
         self._our_costmap.publish(self._costmap)
         self.updateMap(self._costmap)
-        self.explore()
+        #self.explore()
 
     # def localCostmapMoved(self, costmap):
     #     # Wait for us to get a global costmap
