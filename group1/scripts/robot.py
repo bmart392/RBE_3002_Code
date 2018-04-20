@@ -35,12 +35,13 @@ class Robot:
         rospy.Subscriber('/astar_goal', PoseStamped, self.setEndNode, queue_size=1)  # handle nav goal
         rospy.Subscriber('/astar_grid_walls', GridCells, self.map_changed, queue_size=1)
         rospy.Subscriber('/astar_grid_path', GridCells, self.path_changed, queue_size=1)
-        #rospy.Subscriber('/explore_frontier', PoseStamped, self.setEndNode, queue_size=1)
+        # rospy.Subscriber('/explore_frontier', PoseStamped, self.setEndNode, queue_size=1)
         # rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1
 
         # Publishers
         self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self._path_pub = rospy.Publisher('/astar_path', Path, latch=True, queue_size=1)
+        self._pos_pub = rospy.Publisher('/robot_pos', Pose, latch=True, queue_size=1)
 
         # Services
         rospy.wait_for_service('astar')
@@ -110,6 +111,18 @@ class Robot:
         self._current.orientation.y = orientation[1]
         self._current.orientation.z = orientation[2]
         self._current.orientation.w = orientation[3]
+
+        pose = Pose()
+        pose.position.x = self._current.position.x
+        pose.position.y = self._current.position.y
+        pose.position.z = 0.0
+
+        pose.orientation.w = self._current.orientation.x
+        pose.orientation.x = self._current.orientation.y
+        pose.orientation.y = self._current.orientation.z
+        pose.orientation.z = self._current.orientation.w
+
+        self._pos_pub.publish(pose)
 
     def path_changed(self, path):
         self.current_path = path
