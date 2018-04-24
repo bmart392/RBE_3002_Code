@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-import rospy, math, copy
+import rospy, math, copy, tf
 from nav_msgs.msg import OccupancyGrid, GridCells
 from geometry_msgs.msg import PoseStamped, Quaternion, Point, Pose
+from actionlib_msgs.msg import GoalStatusArray
 from tf.transformations import quaternion_from_euler
 from astar import AStar, Node
 
@@ -12,85 +13,121 @@ class Explore:
 
         self._map = OccupancyGrid()
         self._mapComplete = False
+
+        self._closest_node = None
+        self._current_node = Node(0, 0, [])
+
+        self._goal_reached = True
+        self._node_blacklist = []
+
         self._currentPosX = 0.0
         self._currentPosY = 0.0
 
+        self._odom_list = tf.TransformListener()
+        rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
+        rospy.Timer(rospy.Duration(1), self.update_frontier)
+        rospy.Timer(rospy.Duration(.5), self.choose_new_goal)
+
         # Subscribers
         rospy.Subscriber('/map', OccupancyGrid, self.updatemap, queue_size=1)
-        rospy.Subscriber('/robot_pos', Pose, self.updatepos, queue_size=1)
+        rospy.Subscriber('/move_base/status', GoalStatusArray, self.checkStatus, queue_size=1)
 
         # Publishers
         self._frontier_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, latch=True, queue_size=1)
         self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
         self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
 
+
+    def updateCurrentPose(self, evprent):
+        """
+            This is a callback that runs every 0.1s.
+            Updates this instance of Robot's internal position variable (self._current)
+        """
+
+        # wait for and get the transform between two frames
+        self._odom_list.waitForTransform('odom', 'base_link', rospy.Time(0), rospy.Duration(1.0))
+        (position, orientation) = self._odom_list.lookupTransform('odom', 'base_link', rospy.Time(0))
+
+        # check if map is there
+        if self._map.info.resolution == 0:
+            return
+
+        # save the current position
+        current_pos_map = self.worldCoordToMap(position[0], position[1])
+
+        self._currentPosX = current_pos_map[0]
+        self._currentPosY = current_pos_map[1]
+
+    def checkStatus(self, _status):
+        for status in _status.status_list:
+            if status.status == 3:
+                self._goal_reached = True
+                print "Reset GR 3"
+                break
+            elif status.status == 4: # If we can't find a path to a node, then we add it to the blacklist
+                if self._current_node not in self._node_blacklist:
+                    self._node_blacklist.append(self._current_node)
+                self._goal_reached = True
+                print "Reset GR 4"
+
     def updatemap(self, new_map):
         self._map = copy.deepcopy(new_map)
         self._mapComplete = False
-        print "Map updated"
 
-    def updatepos(self, msg):
-        if not self._map.info.resolution == 0:
-            current_pos_world = copy.deepcopy(msg)
-            current_pos_map = self.worldCoordToMap(current_pos_world.position.x, current_pos_world.position.y)
-            self._currentPosX = current_pos_map[0]
-            self._currentPosY = current_pos_map[1]
-
-    def explore(self, event):
+    def update_frontier(self, event):
+        # Don't explore if map is completed
+        if self._mapComplete:
+            return
 
         frontier_nodes = []
+        closest_distance = float("inf")
+        for x in range(0, self._map.info.width):
+            for y in range(0, self._map.info.height):
+                cell_value = self._map.data[y * self._map.info.height + x]
+                if 95 > cell_value > -1: # and not self.checkNeighborsForWall(x, y):
+                    neighbors = self.getNeighborsWithoutWalls(x, y)
 
-        if not self._mapComplete:
-            for x in range(0, self._map.info.width):
-                for y in range(0, self._map.info.height):
-                    cell_value = self._map.data[y * self._map.info.height + x]
-                    if 95 > cell_value > -1: # and not self.checkNeighborsForWall(x, y):
-                        neighbors = self.getNeighborsWithoutWalls(x, y)
-                        if len(neighbors) < 8:
+                    if len(neighbors) < 8:
+                        continue
+
+                    for coord in neighbors:
+                        neighbor_value = self._map.data[coord[1] * self._map.info.height + coord[0]]
+                        node = Node(x, y, [])
+                        if (neighbor_value < 0) and (node not in self._node_blacklist):
+                            frontier_nodes.append(node)
+
+                            node_distance = math.sqrt((self._currentPosX - node.x)**2 + (self._currentPosY - node.y)**2)
+                            if node_distance < closest_distance:
+                                closest_distance = node_distance
+                                self._closest_node = node
+
                             break
-                        for coord in neighbors:
-                            neighbor_value = self._map.data[coord[1] * self._map.info.height + coord[0]]
-                            if neighbor_value < 0:
-                                frontier_nodes.append(Node(x, y, []))
-                                break
-
 
         if not frontier_nodes:
             #self._mapComplete = True
             print("Frontier is empty")
             return
 
-        frontier_nodes_filtered = frontier_nodes
-        # frontier_nodes_filtered = []
-        # num_neighbors_in_frontier = 0
-        # for node_for_neighbors in frontier_nodes:
-        #     node_neighbors = self.getNeighborsWithWalls(node_for_neighbors.x, node_for_neighbors.y)
-        #     for node_in_frontier in frontier_nodes:
-        #         for coord in node_neighbors:
-        #                 if node_in_frontier.x == coord[0] and node_in_frontier.y == coord[1]:
-        #                     num_neighbors_in_frontier += 1
-        #                     if num_neighbors_in_frontier > 2:
-        #                         frontier_nodes_filtered.append(node_for_neighbors)
-        #                         num_neighbors_in_frontier = 0
+        self.drawNodes(frontier_nodes, "frontier")
 
-        self.drawNodes(frontier_nodes_filtered, "frontier")
+    def choose_new_goal(self, event):
+        # Don't choose a new goal if we haven't reached the last goal
+        if not self._goal_reached or self._closest_node is None:
+            return
 
-        closest_node = frontier_nodes_filtered[0]
-        closest_distance = math.sqrt((self._currentPosX - closest_node.x)**2 + (self._currentPosY - closest_node.y)**2)
-        for node in frontier_nodes_filtered:
-            node_distance = math.sqrt((self._currentPosX - node.x) ** 2 + (self._currentPosY - node.y) ** 2)
-            if node_distance < closest_distance:
-                closest_distance = math.sqrt((self._currentPosX - node.x)**2 + (self._currentPosY - node.y)**2)
-                closest_node = node
+        self._goal_reached = False
 
-        self.drawNodes([closest_node] * 2, "path")
+        print "Choosing new goal"
+
+        self.drawNodes([self._closest_node] * 2, "path")
+        self._current_node = self._closest_node
 
         pose = PoseStamped()
         pose.header.seq = 1
         pose.header.frame_id = 'map'
         pose.header.stamp = rospy.Time.now()
 
-        p = self.mapCoordsToWorld(closest_node.x, closest_node.y)
+        p = self.mapCoordsToWorld(self._closest_node.x, self._closest_node.y)
         pose.pose.position.x = p[0]
         pose.pose.position.y = p[1]
         pose.pose.position.z = 0.0
@@ -116,6 +153,9 @@ class Explore:
         return neighbors
 
     def getNeighborsWithoutWalls(self, x, y):
+        return self._getNeighborsWithoutWalls(x, y, 2)
+
+    def _getNeighborsWithoutWalls(self, x, y, recurse):
         neighbors = []
         # for coord in [(x, y - 1),  (x - 1, y), (x + 1, y), (x, y + 1)]:
         for coord in [(x - 1, y - 1), (x, y - 1), (x + 1, y - 1), (x - 1, y),
@@ -127,7 +167,13 @@ class Explore:
                 continue
 
             if self._map.data[yc * self._map.info.height + xc] < 100:
-                neighbors.append(coord)
+                add_neighbor = True
+                if recurse != 0:
+                    recurse -= 1
+                    add_neighbor = (len(self._getNeighborsWithoutWalls(xc, yc, recurse)) == 8)
+
+                if add_neighbor:
+                    neighbors.append(coord)
 
         return neighbors
 
@@ -185,8 +231,6 @@ class Explore:
 if __name__ == '__main__':
     rospy.init_node('explore_node')
     turtle = Explore()
-    rospy.Timer(rospy.Duration(3), turtle.explore)
-   # turtle.explore
     rospy.spin()
 
 

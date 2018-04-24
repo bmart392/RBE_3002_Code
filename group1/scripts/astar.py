@@ -19,6 +19,9 @@ class Node:
         self.y = y
         self.neighbors = neighbors  # List of (x, y) tuples
 
+    def __eq__(self, other):
+        return (self.x == other.x) and (self.y == other.y)
+
 
 class AStar:
     def __init__(self):
