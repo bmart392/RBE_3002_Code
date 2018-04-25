@@ -29,19 +29,20 @@ class Robot:
         self.rate = rospy.Rate(10)
 
         # Current pose timer
-        rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
-
-        # Subscribers
-        rospy.Subscriber('/astar_goal', PoseStamped, self.setEndNode, queue_size=1)  # handle nav goal
-        rospy.Subscriber('/astar_grid_walls', GridCells, self.map_changed, queue_size=1)
-        rospy.Subscriber('/astar_grid_path', GridCells, self.path_changed, queue_size=1)
-        # rospy.Subscriber('/explore_frontier', PoseStamped, self.setEndNode, queue_size=1)
-        # rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1
+        # rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
 
         # Publishers
         self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self._path_pub = rospy.Publisher('/astar_path', Path, latch=True, queue_size=1)
         self._pos_pub = rospy.Publisher('/robot_pos', Pose, latch=True, queue_size=1)
+
+        # Subscribers
+        rospy.Subscriber('/astar_goal', PoseStamped, self.setEndNode, queue_size=1)  # handle nav goal
+        rospy.Subscriber('/astar_grid_walls', GridCells, self.map_changed, queue_size=1)
+        rospy.Subscriber('/astar_grid_path', GridCells, self.path_changed, queue_size=1)
+        rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.update_pose_amcl, queue_size=1)
+        # rospy.Subscriber('/explore_frontier', PoseStamped, self.setEndNode, queue_size=1)
+        # rospy.Subscriber('/initialpose', PoseWithCovarianceStamped, self.setStartNode, queue_size=1
 
         # Services
         rospy.wait_for_service('astar')
@@ -93,6 +94,20 @@ class Robot:
         return (yaw) % (2 * math.pi)
 
     ## CALLBACK FUNCTIONS
+    def update_pose_amcl(self, event):
+        self._current = event.pose.pose
+
+        pose = Pose()
+        pose.position.x = self._current.position.x
+        pose.position.y = self._current.position.y
+        pose.position.z = 0.0
+
+        pose.orientation.w = self._current.orientation.x
+        pose.orientation.x = self._current.orientation.y
+        pose.orientation.y = self._current.orientation.z
+        pose.orientation.z = self._current.orientation.w
+
+        self._pos_pub.publish(pose)
 
     def updateCurrentPose(self, evprent):
         """

@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 import rospy, math, copy, tf
 from nav_msgs.msg import OccupancyGrid, GridCells
-from geometry_msgs.msg import PoseStamped, Quaternion, Point, Pose
+from geometry_msgs.msg import PoseStamped, Quaternion, Point, Pose, Twist
 from actionlib_msgs.msg import GoalStatusArray
 from tf.transformations import quaternion_from_euler
 from astar import AStar, Node
+
+import actionlib
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 
 
 class Explore:
@@ -17,26 +20,26 @@ class Explore:
         self._closest_node = None
         self._current_node = Node(0, 0, [])
 
-        self._goal_reached = True
         self._node_blacklist = []
 
         self._currentPosX = 0.0
         self._currentPosY = 0.0
 
+        # Move Base action client
+        self._client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
+        self._client.wait_for_server()
+
         self._odom_list = tf.TransformListener()
         rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
         rospy.Timer(rospy.Duration(1), self.update_frontier)
-        rospy.Timer(rospy.Duration(.5), self.choose_new_goal)
 
         # Subscribers
         rospy.Subscriber('/map', OccupancyGrid, self.updatemap, queue_size=1)
-        rospy.Subscriber('/move_base/status', GoalStatusArray, self.checkStatus, queue_size=1)
 
         # Publishers
-        self._frontier_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, latch=True, queue_size=1)
         self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
         self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
-
+        self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
     def updateCurrentPose(self, evprent):
         """
@@ -58,17 +61,13 @@ class Explore:
         self._currentPosX = current_pos_map[0]
         self._currentPosY = current_pos_map[1]
 
-    def checkStatus(self, _status):
-        for status in _status.status_list:
-            if status.status == 3:
-                self._goal_reached = True
-                print "Reset GR 3"
-                break
-            elif status.status == 4: # If we can't find a path to a node, then we add it to the blacklist
-                if self._current_node not in self._node_blacklist:
-                    self._node_blacklist.append(self._current_node)
-                self._goal_reached = True
-                print "Reset GR 4"
+        # If we are navigating to a node, then check if we are close to it
+        if self._current_node is not None:
+            error_x = self._current_node.x - self._currentPosX
+            error_y = self._current_node.y - self._currentPosY
+            if math.sqrt(error_x ** 2 + error_y ** 2) < 3:
+                self._current_node = None
+                self.choose_new_goal()
 
     def updatemap(self, new_map):
         self._map = copy.deepcopy(new_map)
@@ -84,7 +83,7 @@ class Explore:
         for x in range(0, self._map.info.width):
             for y in range(0, self._map.info.height):
                 cell_value = self._map.data[y * self._map.info.height + x]
-                if 95 > cell_value > -1: # and not self.checkNeighborsForWall(x, y):
+                if 95 > cell_value > -1:
                     neighbors = self.getNeighborsWithoutWalls(x, y)
 
                     if len(neighbors) < 8:
@@ -104,38 +103,54 @@ class Explore:
                             break
 
         if not frontier_nodes:
-            #self._mapComplete = True
             print("Frontier is empty")
+            vel_msg = Twist()
+            vel_msg.linear.x = 0
+            vel_msg.angular.z = 0
+            self._vel_pub.publish(vel_msg)
+            self.drawNodes(frontier_nodes, "frontier")
             return
 
         self.drawNodes(frontier_nodes, "frontier")
 
-    def choose_new_goal(self, event):
-        # Don't choose a new goal if we haven't reached the last goal
-        if not self._goal_reached or self._closest_node is None:
+    def choose_new_goal(self):
+        # Don't choose a new goal if map is complete
+        if self._mapComplete:
             return
 
-        self._goal_reached = False
+        # Wait for a closest node to be set
+        while self._closest_node is None:
+            rospy.sleep(0.5)
+
+        self._client.cancel_all_goals()
 
         print "Choosing new goal"
 
         self.drawNodes([self._closest_node] * 2, "path")
         self._current_node = self._closest_node
 
-        pose = PoseStamped()
-        pose.header.seq = 1
-        pose.header.frame_id = 'map'
-        pose.header.stamp = rospy.Time.now()
+        new_goal_pose = PoseStamped()
+        new_goal_pose.header.seq = 1
+        new_goal_pose.header.frame_id = 'map'
+        new_goal_pose.header.stamp = rospy.Time.now()
 
         p = self.mapCoordsToWorld(self._closest_node.x, self._closest_node.y)
-        pose.pose.position.x = p[0]
-        pose.pose.position.y = p[1]
-        pose.pose.position.z = 0.0
+        new_goal_pose.pose.position.x = p[0]
+        new_goal_pose.pose.position.y = p[1]
+        new_goal_pose.pose.position.z = 0.0
 
         q = quaternion_from_euler(0.0, 0.0, 0.0)
-        pose.pose.orientation = Quaternion(*q)
+        new_goal_pose.pose.orientation = Quaternion(*q)
 
-        self._frontier_pub.publish(pose)
+        goal = MoveBaseGoal()
+        goal.target_pose = new_goal_pose
+
+        self._client.send_goal(goal, self.goal_completed)
+
+    def goal_completed(self, terminal_state, result):
+        print "Goal Completed! (State {})".format(terminal_state)
+        self._node_blacklist.append(self._current_node)
+        self.choose_new_goal()
 
     def getNeighborsWithWalls(self, x, y):
         neighbors = []
@@ -153,7 +168,7 @@ class Explore:
         return neighbors
 
     def getNeighborsWithoutWalls(self, x, y):
-        return self._getNeighborsWithoutWalls(x, y, 2)
+        return self._getNeighborsWithoutWalls(x, y, 1)
 
     def _getNeighborsWithoutWalls(self, x, y, recurse):
         neighbors = []
@@ -231,6 +246,7 @@ class Explore:
 if __name__ == '__main__':
     rospy.init_node('explore_node')
     turtle = Explore()
+    turtle.choose_new_goal()
     rospy.spin()
 
 

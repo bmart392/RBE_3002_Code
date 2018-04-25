@@ -19,10 +19,6 @@ class Node:
         self.y = y
         self.neighbors = neighbors  # List of (x, y) tuples
 
-    def __eq__(self, other):
-        return (self.x == other.x) and (self.y == other.y)
-
-
 class AStar:
     def __init__(self):
         self.draw = True
@@ -123,7 +119,6 @@ class AStar:
         self._costmap = costmap
         self._our_costmap.publish(self._costmap)
         self.updateMap(self._costmap)
-        #self.explore()
 
     # def localCostmapMoved(self, costmap):
     #     # Wait for us to get a global costmap
@@ -224,7 +219,7 @@ class AStar:
             for next_node in current.neighbors:
                 # Get the current node from the graph
                 next_node = self._graph[next_node]
-                new_cost = cost_so_far[current] + self._costmap.data[current.y * self._costmap.info.height + current.x]
+                new_cost = cost_so_far[current] + 1; #self._costmap.data[current.y * self._costmap.info.height + current.x]
 
                 if (next_node not in cost_so_far) or (new_cost < cost_so_far[next_node]):
                     cost_so_far[next_node] = new_cost
