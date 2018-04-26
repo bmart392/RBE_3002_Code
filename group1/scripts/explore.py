@@ -4,11 +4,27 @@ from nav_msgs.msg import OccupancyGrid, GridCells
 from geometry_msgs.msg import PoseStamped, Quaternion, Point, Pose, Twist
 from actionlib_msgs.msg import GoalStatusArray
 from tf.transformations import quaternion_from_euler
-from astar import AStar, Node
 
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 
+class Node:
+    def __init__(self, x, y, neighbors):
+        self.x = x
+        self.y = y
+        self.neighbors = neighbors  # List of (x, y) tuples
+
+    def __eq__(self, other):
+        if (other == None):
+            return False
+
+        return (self.x == other.x) and (self.y == other.y)
+
+    def __ne__(self, other):
+        return not (self == other)
+
+    def __hash__(self):
+        return hash((self.x, self.y))
 
 class Explore:
 
@@ -17,6 +33,7 @@ class Explore:
         self._map = OccupancyGrid()
         self._mapComplete = False
 
+        self._starting_node = None
         self._closest_node = None
         self._current_node = Node(0, 0, [])
 
@@ -30,8 +47,7 @@ class Explore:
         self._client.wait_for_server()
 
         self._odom_list = tf.TransformListener()
-        rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
-        rospy.Timer(rospy.Duration(1), self.update_frontier)
+        rospy.Timer(rospy.Duration(0.5), self.updateCurrentPose)
 
         # Subscribers
         rospy.Subscriber('/map', OccupancyGrid, self.updatemap, queue_size=1)
@@ -40,6 +56,9 @@ class Explore:
         self._grid_frontier_pub = rospy.Publisher('/astar_grid_frontier', GridCells, latch=True, queue_size=10)
         self._grid_path_pub = rospy.Publisher('/astar_grid_path', GridCells, latch=True, queue_size=1)
         self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+
+    def is_map_complete(self):
+        return self._mapComplete
 
     def updateCurrentPose(self, evprent):
         """
@@ -61,19 +80,25 @@ class Explore:
         self._currentPosX = current_pos_map[0]
         self._currentPosY = current_pos_map[1]
 
+        if self._starting_node is None:
+            self._starting_node = Node(current_pos_map[0], current_pos_map[1], [])
+
         # If we are navigating to a node, then check if we are close to it
         if self._current_node is not None:
             error_x = self._current_node.x - self._currentPosX
             error_y = self._current_node.y - self._currentPosY
             if math.sqrt(error_x ** 2 + error_y ** 2) < 3:
+                print "Got close to goal!"
+                self._node_blacklist.append(self._current_node)
                 self._current_node = None
                 self.choose_new_goal()
 
     def updatemap(self, new_map):
         self._map = copy.deepcopy(new_map)
-        self._mapComplete = False
+        self.update_frontier()
+        self.choose_new_goal()
 
-    def update_frontier(self, event):
+    def update_frontier(self):
         # Don't explore if map is completed
         if self._mapComplete:
             return
@@ -104,11 +129,8 @@ class Explore:
 
         if not frontier_nodes:
             print("Frontier is empty")
-            vel_msg = Twist()
-            vel_msg.linear.x = 0
-            vel_msg.angular.z = 0
-            self._vel_pub.publish(vel_msg)
-            self.drawNodes(frontier_nodes, "frontier")
+            self._mapComplete = True
+            self.go_home()
             return
 
         self.drawNodes(frontier_nodes, "frontier")
@@ -147,6 +169,32 @@ class Explore:
 
         self._client.send_goal(goal, self.goal_completed)
 
+    def go_home(self):
+        self._client.cancel_all_goals()
+
+        print "Going home"
+
+        self.drawNodes([self._starting_node] * 2, "path")
+        self._current_node = self._starting_node
+
+        new_goal_pose = PoseStamped()
+        new_goal_pose.header.seq = 1
+        new_goal_pose.header.frame_id = 'map'
+        new_goal_pose.header.stamp = rospy.Time.now()
+
+        p = self.mapCoordsToWorld(self._starting_node.x, self._starting_node.y)
+        new_goal_pose.pose.position.x = p[0]
+        new_goal_pose.pose.position.y = p[1]
+        new_goal_pose.pose.position.z = 0.0
+
+        q = quaternion_from_euler(0.0, 0.0, 0.0)
+        new_goal_pose.pose.orientation = Quaternion(*q)
+
+        goal = MoveBaseGoal()
+        goal.target_pose = new_goal_pose
+
+        self._client.send_goal(goal)
+
     def goal_completed(self, terminal_state, result):
         print "Goal Completed! (State {})".format(terminal_state)
         self._node_blacklist.append(self._current_node)
@@ -168,7 +216,7 @@ class Explore:
         return neighbors
 
     def getNeighborsWithoutWalls(self, x, y):
-        return self._getNeighborsWithoutWalls(x, y, 1)
+        return self._getNeighborsWithoutWalls(x, y, 2)
 
     def _getNeighborsWithoutWalls(self, x, y, recurse):
         neighbors = []
@@ -246,8 +294,4 @@ class Explore:
 if __name__ == '__main__':
     rospy.init_node('explore_node')
     turtle = Explore()
-    turtle.choose_new_goal()
     rospy.spin()
-
-
-

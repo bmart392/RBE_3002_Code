@@ -26,7 +26,7 @@ class Robot:
 
         self._current = Pose()
         self._odom_list = tf.TransformListener()
-        self.rate = rospy.Rate(10)
+        self.rate = rospy.Rate(50)
 
         # Current pose timer
         # rospy.Timer(rospy.Duration(.1), self.updateCurrentPose)
@@ -59,7 +59,14 @@ class Robot:
         self.command_queue = Queue()
         self.current_command = None
 
+        self.last_update_time = None
+
     def update(self):
+        if not (self.last_update_time is None):
+            print "dt: {0}".format(rospy.Time.now().to_sec() - self.last_update_time)
+
+        self.last_update_time = rospy.Time.now().to_sec()
+
         if self.current_command is None:
             new_cmd = self.command_queue.get()
             if new_cmd is not None:
@@ -75,7 +82,6 @@ class Robot:
         self.rate.sleep()
 
     ## GETTER FUNCTIONS
-
     def getCurrentPosition(self):
         return self._current.position
 

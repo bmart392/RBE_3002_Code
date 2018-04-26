@@ -8,10 +8,11 @@ class RotateCommand:
         self.robot = robot
 
         self.target = angle
-        self.kP = 2
+        self.kP = 1.25
 
+        self.max_speed = 0.5
         self.error = 999
-        self.tolerance = 0.01
+        self.tolerance = 0.105
 
     def setup(self):
         self.target = (self.robot.getCurrentRotation() + self.target) % (2 * math.pi)
@@ -21,7 +22,8 @@ class RotateCommand:
         self.error = self.target - current_r
 
         vel_msg = Twist()
-        vel_msg.angular.z = self.error * self.kP
+        desired_speed = self.error * self.kP
+        vel_msg.angular.z = self.max_speed if desired_speed > self.max_speed else desired_speed
         self.robot.drive(vel_msg)
 
     def end(self):

@@ -17,8 +17,8 @@ class DriveCommand:
 
         self.kP_d = 2
         self.kP_r = 1
-        self.tolerance = 0.05
-        self.max_speed = 0.5
+        self.tolerance = 0.125
+        self.max_speed = 0.25
 
     def setup(self):
         self.robot.waitForTransform('odom', 'base_link')
@@ -32,7 +32,6 @@ class DriveCommand:
         vel_msg = Twist()
 
         current_position = self.robot.getCurrentPosition()
-        print(current_position.x, current_position.y, math.atan2(current_position.y, current_position.x))
 
         self.error_x = (self.target_x - current_position.x)
         self.error_y = (self.target_y - current_position.y)
@@ -49,4 +48,8 @@ class DriveCommand:
         self.robot.stop()
 
     def is_finished(self):
-        return math.sqrt(self.error_x**2 + self.error_y**2) < self.tolerance
+        real_error = math.sqrt(self.error_x ** 2 + self.error_y ** 2)
+        position = self.robot.getCurrentPosition()
+        print "Position: x:{0} y:{1}, z:{2}".format(position.x, position.y, position.z)
+        print "Drive Error: {0}".format(real_error)
+        return real_error < self.tolerance

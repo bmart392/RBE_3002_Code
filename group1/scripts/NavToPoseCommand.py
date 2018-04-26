@@ -33,6 +33,8 @@ class NavToPoseCommand:
         rotate2 = RotateCommand(self.robot, -turn_r + goal_r)
         drive1 = DriveCommand(self.robot, dist)
 
+        print "Motion plan: x:{0} y:{1} r:{2}".format(goal_x, goal_y, goal_r)
+
         self.command_queue.put(rotate1)
         self.command_queue.put(drive1)
         self.command_queue.put(rotate2)
